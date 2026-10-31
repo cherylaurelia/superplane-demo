@@ -142,7 +142,7 @@ export default function Page() {
 
       <section aria-labelledby="diff" className="mt-14">
         <Eyebrow>The change · 2 files + tests</Eyebrow>
-        <h2 id="diff" className="mt-3 text-2xl">pkg/components/runner/codex/run.js</h2>
+        <h2 id="diff" className="mt-3 break-all text-xl sm:text-2xl">pkg/components/runner/codex/run.js</h2>
         <pre className="mt-4 overflow-x-auto rounded-xl border border-line bg-panel p-5 font-mono text-[13px] leading-6">
           <code>
             <span className="text-muted">{"  const cacheRead = Number(source.cached_input_tokens || source.cache_read_input_tokens || 0);\n"}</span>
@@ -162,7 +162,7 @@ export default function Page() {
           <li className="rounded-lg border border-line p-4">
             <span className="block font-mono text-[11px] uppercase tracking-wider text-accent">Tests</span>
             #9049 numbers → input 780,777; Anthropic disjoint case unchanged. Written in your{" "}
-            <code className="font-mono">node -e</code> test style.
+            <code className="whitespace-nowrap font-mono">node -e</code> test style.
           </li>
           <li className="rounded-lg border border-line p-4">
             <span className="block font-mono text-[11px] uppercase tracking-wider text-accent">Existing rows</span>
