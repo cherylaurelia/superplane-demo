@@ -1,0 +1,165 @@
+From e1a0dad58af2dbda818a80eaa8575b45d396623e Mon Sep 17 00:00:00 2001
+From: Cheryl Aurelia <cherylaurelia311@gmail.com>
+Date: Sat, 31 Oct 2026 16:03:23 -0400
+Subject: [PATCH] fix: don't count OpenAI cached input tokens twice (#9049)
+
+OpenAI reports cached_input_tokens / prompt_tokens_details.cached_tokens as a
+subset of input. The Codex runner and the pkg/llm OpenAI-compatible client
+stored them as a sibling bucket, so token totals and EstimateMicros counted
+cached input twice. Subtract it at ingest, matching
+pkg/integrations/openai/text_prompt.go. Anthropic usage is unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ pkg/components/runner/codex/run.js      | 18 ++++++++++---
+ pkg/components/runner/codex/run_test.go | 33 ++++++++++++++++++++++++
+ pkg/llm/openai_compat.go                |  9 ++++++-
+ pkg/llm/openai_compat_usage_test.go     | 34 +++++++++++++++++++++++++
+ 4 files changed, 89 insertions(+), 5 deletions(-)
+ create mode 100644 pkg/llm/openai_compat_usage_test.go
+
+diff --git a/pkg/components/runner/codex/run.js b/pkg/components/runner/codex/run.js
+index 19f969b..4c11e31 100644
+--- a/pkg/components/runner/codex/run.js
++++ b/pkg/components/runner/codex/run.js
+@@ -649,14 +649,23 @@ function loadTurnTelemetry() {
+ 
+ function extractUsage(event) {
+   const source = event.usage || (event.item && event.item.usage) || event;
++  const cacheRead = Number(
++    source.cached_input_tokens || source.cache_read_input_tokens || 0,
++  );
++  let input = Number(source.input_tokens || source.prompt_tokens || 0);
++  // OpenAI reports cached_input_tokens as a subset of input_tokens (unlike
++  // Anthropic's disjoint cache_read_input_tokens). Keep the buckets disjoint so
++  // token totals and EstimateMicros don't count cached input twice (#9049).
++  // Same rule as pkg/integrations/openai/text_prompt.go.
++  if (source.cached_input_tokens != null && cacheRead > 0 && cacheRead <= input) {
++    input -= cacheRead;
++  }
+   const usage = {
+-    input_tokens: Number(source.input_tokens || source.prompt_tokens || 0),
++    input_tokens: input,
+     output_tokens: Number(
+       source.output_tokens || source.completion_tokens || 0,
+     ),
+-    cache_read_input_tokens: Number(
+-      source.cached_input_tokens || source.cache_read_input_tokens || 0,
+-    ),
++    cache_read_input_tokens: cacheRead,
+     cache_creation_input_tokens: Number(source.cache_write_input_tokens || 0),
+     reasoning_tokens: Number(
+       source.reasoning_output_tokens || source.reasoning_tokens || 0,
+@@ -1182,6 +1191,7 @@ if (require.main === module) {
+ }
+ 
+ module.exports = {
++  extractUsage,
+   formatCodexJsonLines,
+   formatTurnResult,
+   createCodexFormatter,
+diff --git a/pkg/components/runner/codex/run_test.go b/pkg/components/runner/codex/run_test.go
+index ec68412..d63ad61 100644
+--- a/pkg/components/runner/codex/run_test.go
++++ b/pkg/components/runner/codex/run_test.go
+@@ -1125,3 +1125,36 @@ func TestFormatCodexJsonLinesEmitsCompletedUsage(t *testing.T) {
+ 	require.Contains(t, usage, "total_cost_usd")
+ 	assert.InDelta(t, 0.12, usage["total_cost_usd"], 1e-9)
+ }
++
++func extractUsageFromScript(t *testing.T, event string) map[string]float64 {
++	t.Helper()
++	script, err := filepath.Abs("run.js")
++	require.NoError(t, err)
++	cmd := exec.Command(
++		"node",
++		"-e",
++		`const { extractUsage } = require(process.argv[1]); process.stdout.write(JSON.stringify(extractUsage(JSON.parse(process.argv[2]))));`,
++		script,
++		event,
++	)
++	out, err := cmd.CombinedOutput()
++	require.NoError(t, err, string(out))
++	var usage map[string]float64
++	require.NoError(t, json.Unmarshal(out, &usage))
++	return usage
++}
++
++// OpenAI's cached_input_tokens is a subset of input_tokens (#9049).
++func TestExtractUsageKeepsOpenAICachedInputDisjoint(t *testing.T) {
++	usage := extractUsageFromScript(t, `{"type":"turn.completed","usage":{"input_tokens":56305375,"cached_input_tokens":55524598,"output_tokens":223089}}`)
++	assert.Equal(t, float64(780777), usage["input_tokens"])
++	assert.Equal(t, float64(55524598), usage["cache_read_input_tokens"])
++	assert.Equal(t, float64(223089), usage["output_tokens"])
++}
++
++// Anthropic-style cache_read_input_tokens is already disjoint; leave it alone.
++func TestExtractUsageLeavesDisjointCacheReadUnchanged(t *testing.T) {
++	usage := extractUsageFromScript(t, `{"usage":{"input_tokens":780777,"cache_read_input_tokens":55524598,"output_tokens":223089}}`)
++	assert.Equal(t, float64(780777), usage["input_tokens"])
++	assert.Equal(t, float64(55524598), usage["cache_read_input_tokens"])
++}
+diff --git a/pkg/llm/openai_compat.go b/pkg/llm/openai_compat.go
+index 343e5b0..6281f49 100644
+--- a/pkg/llm/openai_compat.go
++++ b/pkg/llm/openai_compat.go
+@@ -266,8 +266,15 @@ func (u openAIUsage) toUsage() Usage {
+ 	if total == 0 {
+ 		total = u.PromptTokens + u.CompletionTokens
+ 	}
++	// prompt_tokens includes prompt_tokens_details.cached_tokens. Keep the
++	// buckets disjoint so pricing doesn't bill cached input twice (#9049),
++	// matching pkg/integrations/openai/text_prompt.go.
++	input := u.PromptTokens
++	if cached := u.PromptTokensDetails.CachedTokens; cached > 0 && cached <= input {
++		input -= cached
++	}
+ 	usage := Usage{
+-		InputTokens:     u.PromptTokens,
++		InputTokens:     input,
+ 		OutputTokens:    u.CompletionTokens,
+ 		CacheReadTokens: u.PromptTokensDetails.CachedTokens,
+ 		ReasoningTokens: u.CompletionTokensDetails.ReasoningTokens,
+diff --git a/pkg/llm/openai_compat_usage_test.go b/pkg/llm/openai_compat_usage_test.go
+new file mode 100644
+index 0000000..3a7bbf0
+--- /dev/null
++++ b/pkg/llm/openai_compat_usage_test.go
+@@ -0,0 +1,34 @@
++package llm
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++)
++
++// Numbers from #9049: one Codex Implement step where 98.6% of input was cached.
++func TestOpenAIUsage_CachedTokensAreNotCountedTwice(t *testing.T) {
++	var u openAIUsage
++	u.PromptTokens = 56_305_375
++	u.CompletionTokens = 223_089
++	u.TotalTokens = 56_528_464
++	u.PromptTokensDetails.CachedTokens = 55_524_598
++
++	usage := u.toUsage()
++
++	assert.Equal(t, int64(780_777), usage.InputTokens)
++	assert.Equal(t, int64(55_524_598), usage.CacheReadTokens)
++	assert.Equal(t, int64(223_089), usage.OutputTokens)
++	assert.Equal(t, int64(56_528_464), usage.TotalTokens)
++}
++
++func TestOpenAIUsage_NoCacheLeavesInputUnchanged(t *testing.T) {
++	var u openAIUsage
++	u.PromptTokens = 1_000
++	u.CompletionTokens = 50
++
++	usage := u.toUsage()
++
++	assert.Equal(t, int64(1_000), usage.InputTokens)
++	assert.Equal(t, int64(0), usage.CacheReadTokens)
++}
+-- 
+2.50.1 (Apple Git-155)
+
