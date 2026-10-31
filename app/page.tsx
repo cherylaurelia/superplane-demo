@@ -77,7 +77,7 @@ export default function Page() {
       <header className="text-center">
         <Eyebrow>superplane #9049 · usage accounting</Eyebrow>
         <h1 className="mx-auto mt-5 max-w-3xl text-4xl leading-[1.1] sm:text-5xl">
-          OpenAI cached input is billed twice.
+          OpenAI cached input is counted twice.
           <span className="block text-[#9fb8b3]">Count it once, like text_prompt.go already does.</span>
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-[17px] text-muted">
