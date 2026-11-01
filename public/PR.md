@@ -17,9 +17,17 @@ Fixes #9049, reported by @mvgijssel, who did the diagnosis and the arithmetic. T
 | after | 780,777 | 74,486,818 µ$ = **$74.49** |
 
 ## Tests
-- `pkg/llm/openai_compat_usage_test.go`: #9049 numbers → `InputTokens` 780,777; provider total unchanged.
-- `pkg/components/runner/codex/run_test.go`: `extractUsage` via `node -e`, same style as `thinkingArgsFromScript`; OpenAI subset case + Anthropic disjoint case.
-- Ran the JS assertions locally with Node 26. **Go tests not run locally** (no Go toolchain on this machine); CI will run them.
+- `pkg/llm/openai_compat_usage_test.go` (new): #9049 numbers → `InputTokens` 780,777; provider total unchanged; no-cache case unchanged.
+- `pkg/components/runner/codex/run_test.go` (new): `extractUsage` via `node -e`, same style as `thinkingArgsFromScript`; OpenAI subset case + Anthropic disjoint case.
+- Two existing assertions encoded the overlap and are updated to the disjoint value:
+  `TestFormatCodexJsonLinesEmitsCompletedUsage` (input 100 with 30 cached → 70) and
+  `TestOpenAI_ListModelsAndComplete` (prompt_tokens 10 with 2 cached → 8). Totals are unchanged in both.
+- Ran locally (Go 1.27.3, protos generated with `scripts/protoc.sh`): `go test ./pkg/llm/ ./pkg/components/runner/codex/ ./pkg/components/runner/openrouter/ ./ee/billing/pricebook/` passes, `gofmt -s -l` clean.
+  The DB-backed tests (`TestSeedDevHostedOpenRouter*`) were skipped (no local Postgres); CI will run them.
+
+## Worth a look
+- OpenRouter also goes through `openAIUsage.toUsage`. Their usage follows the OpenAI schema (`cached_tokens` inside `prompt_tokens`) and they return `cost`, so pricing there uses the provider cost, not `EstimateMicros`. I didn't verify this against a live OpenRouter response.
+- `input_tokens` in the Codex turn records and the run UI now means uncached input, the same as Anthropic. I found no context-window or compaction logic reading it, but the live-log dialog shows it as is.
 
 ## Not in this PR
 - Existing rows: `backfill-dry-run.sql` is a read-only SELECT showing old vs. recomputed tokens/cost for estimate-priced OpenAI rows before the deploy. No UPDATE.

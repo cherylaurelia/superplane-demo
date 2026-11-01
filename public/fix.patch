@@ -1,4 +1,4 @@
-From e1a0dad58af2dbda818a80eaa8575b45d396623e Mon Sep 17 00:00:00 2001
+From e33d0539d176382b38daa9a4716558ca91815c97 Mon Sep 17 00:00:00 2001
 From: Cheryl Aurelia <cherylaurelia311@gmail.com>
 Date: Sat, 31 Oct 2026 16:03:23 -0400
 Subject: [PATCH] fix: don't count OpenAI cached input tokens twice (#9049)
@@ -11,15 +11,16 @@ pkg/integrations/openai/text_prompt.go. Anthropic usage is unchanged.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- pkg/components/runner/codex/run.js      | 18 ++++++++++---
- pkg/components/runner/codex/run_test.go | 33 ++++++++++++++++++++++++
- pkg/llm/openai_compat.go                |  9 ++++++-
- pkg/llm/openai_compat_usage_test.go     | 34 +++++++++++++++++++++++++
- 4 files changed, 89 insertions(+), 5 deletions(-)
+ pkg/components/runner/codex/run.js      | 18 +++++++++---
+ pkg/components/runner/codex/run_test.go | 37 ++++++++++++++++++++++++-
+ pkg/llm/llm_test.go                     |  2 +-
+ pkg/llm/openai_compat.go                |  9 +++++-
+ pkg/llm/openai_compat_usage_test.go     | 34 +++++++++++++++++++++++
+ 5 files changed, 93 insertions(+), 7 deletions(-)
  create mode 100644 pkg/llm/openai_compat_usage_test.go
 
 diff --git a/pkg/components/runner/codex/run.js b/pkg/components/runner/codex/run.js
-index 19f969b..4c11e31 100644
+index 19f969bd3..4c11e315c 100644
 --- a/pkg/components/runner/codex/run.js
 +++ b/pkg/components/runner/codex/run.js
 @@ -649,14 +649,23 @@ function loadTurnTelemetry() {
@@ -59,10 +60,19 @@ index 19f969b..4c11e31 100644
    formatTurnResult,
    createCodexFormatter,
 diff --git a/pkg/components/runner/codex/run_test.go b/pkg/components/runner/codex/run_test.go
-index ec68412..d63ad61 100644
+index ec6841242..349a05018 100644
 --- a/pkg/components/runner/codex/run_test.go
 +++ b/pkg/components/runner/codex/run_test.go
-@@ -1125,3 +1125,36 @@ func TestFormatCodexJsonLinesEmitsCompletedUsage(t *testing.T) {
+@@ -1119,9 +1119,44 @@ func TestFormatCodexJsonLinesEmitsCompletedUsage(t *testing.T) {
+ 	}
+ 	require.NotNil(t, last)
+ 	usage := last["usage"].(map[string]any)
+-	assert.Equal(t, float64(100), usage["input_tokens"])
++	// cached_input_tokens is a subset of input_tokens, so 30 of the 100 are
++	// reported only as cache reads (#9049).
++	assert.Equal(t, float64(70), usage["input_tokens"])
+ 	assert.Equal(t, float64(30), usage["cache_read_input_tokens"])
+ 	assert.Equal(t, float64(20), usage["output_tokens"])
  	require.Contains(t, usage, "total_cost_usd")
  	assert.InDelta(t, 0.12, usage["total_cost_usd"], 1e-9)
  }
@@ -99,8 +109,21 @@ index ec68412..d63ad61 100644
 +	assert.Equal(t, float64(780777), usage["input_tokens"])
 +	assert.Equal(t, float64(55524598), usage["cache_read_input_tokens"])
 +}
+diff --git a/pkg/llm/llm_test.go b/pkg/llm/llm_test.go
+index 98934aea7..285a59b1f 100644
+--- a/pkg/llm/llm_test.go
++++ b/pkg/llm/llm_test.go
+@@ -123,7 +123,7 @@ func TestOpenAI_ListModelsAndComplete(t *testing.T) {
+ 	resp, err := client.Complete(context.Background(), CompleteRequest{Model: "gpt-5-mini", Prompt: "hi"})
+ 	require.NoError(t, err)
+ 	assert.Equal(t, "ok", resp.Text)
+-	assert.Equal(t, int64(10), resp.Usage.InputTokens)
++	assert.Equal(t, int64(8), resp.Usage.InputTokens) // prompt_tokens 10 includes 2 cached (#9049)
+ 	assert.Equal(t, int64(4), resp.Usage.OutputTokens)
+ 	assert.Equal(t, int64(2), resp.Usage.CacheReadTokens)
+ 	assert.Equal(t, int64(1), resp.Usage.ReasoningTokens)
 diff --git a/pkg/llm/openai_compat.go b/pkg/llm/openai_compat.go
-index 343e5b0..6281f49 100644
+index 343e5b0a7..6281f493a 100644
 --- a/pkg/llm/openai_compat.go
 +++ b/pkg/llm/openai_compat.go
 @@ -266,8 +266,15 @@ func (u openAIUsage) toUsage() Usage {
@@ -122,7 +145,7 @@ index 343e5b0..6281f49 100644
  		ReasoningTokens: u.CompletionTokensDetails.ReasoningTokens,
 diff --git a/pkg/llm/openai_compat_usage_test.go b/pkg/llm/openai_compat_usage_test.go
 new file mode 100644
-index 0000000..3a7bbf0
+index 000000000..3a7bbf023
 --- /dev/null
 +++ b/pkg/llm/openai_compat_usage_test.go
 @@ -0,0 +1,34 @@

@@ -20,7 +20,7 @@ OpenAI reports cached input tokens as a **subset** of input tokens. SuperPlane's
   https://github.com/superplanehq/superplane/blob/b01c19a/pkg/integrations/openai/text_prompt.go#L450-L470
 
 ## What's here
-- `public/fix.patch`: `git am`-able patch against superplane `b01c19a` (Codex `extractUsage` +
+- `public/fix.patch`: `git am`-able patch against superplane `e1bd6e22d` (Codex `extractUsage` +
   `openAIUsage.toUsage`, plus tests). Anthropic usage is unchanged.
 - `public/PR.md`: PR description crediting #9049, with the math.
 - `public/backfill-dry-run.sql`: read-only SELECT of old vs recomputed cost for existing rows. No UPDATE.
@@ -28,7 +28,7 @@ OpenAI reports cached input tokens as a **subset** of input tokens. SuperPlane's
   the "before" matches the recorded `cost_micros` exactly) and a slider showing how the overcharge
   grows with cache hit rate.
 
-JS test assertions were run locally with Node. Go tests were not run (no Go toolchain here).
+Go tests for the touched packages pass locally (`go test ./pkg/llm/ ./pkg/components/runner/codex/ ./ee/billing/pricebook/`; DB-backed seed tests skipped, no local Postgres).
 
 ## Run
 ```bash
