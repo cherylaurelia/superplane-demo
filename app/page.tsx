@@ -11,6 +11,7 @@ const before = {
   total: RUN.input + RUN.cached + RUN.output,
   cost: price(RUN.input, RUN.cached, RUN.output),
 };
+
 const after = {
   inputFull: RUN.input - RUN.cached,
   total: RUN.input - RUN.cached + RUN.cached + RUN.output,
@@ -31,11 +32,13 @@ function UsageCard({
   data: { inputFull: number; total: number; cost: number };
 }) {
   const color = tone === "bad" ? "text-bad" : "text-good";
+
   const rows = [
     ["Input at full rate", data.inputFull, micros(data.inputFull, RATES.input)],
     ["Cache read", RUN.cached, micros(RUN.cached, RATES.cacheRead)],
     ["Output", RUN.output, micros(RUN.output, RATES.output)],
   ] as const;
+
   return (
     <div className="rounded-xl border border-line bg-panel">
       <div className="flex items-center justify-between border-b border-line px-5 py-3">
@@ -74,6 +77,7 @@ function UsageCard({
 
 export default function Page() {
   const factor = (before.cost / after.cost).toFixed(1);
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-5 pb-16 pt-14 sm:px-8">
       <header className="text-center">

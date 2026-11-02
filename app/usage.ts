@@ -17,9 +17,13 @@ export function price(inputBilledAtFullRate: number, cached: number, output: num
 // Same rounding as web_src/src/lib/formatTokenCount.ts
 export function compactTokens(tokens: number): string {
   const strip = (s: string) => s.replace(/\.0$/, "");
+
   if (tokens >= 1_000_000_000) return `${strip((tokens / 1_000_000_000).toFixed(1))}B`;
+
   if (tokens >= 1_000_000) return `${strip((tokens / 1_000_000).toFixed(1))}M`;
+
   if (tokens >= 1_000) return `${strip((tokens / 1_000).toFixed(1))}k`;
+
   return `${tokens}`;
 }
 
