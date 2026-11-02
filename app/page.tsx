@@ -3,6 +3,8 @@ import { RUN, RATES, compactTokens, micros, price, usd } from "./usage";
 
 const SRC = "https://github.com/superplanehq/superplane/blob/b01c19a";
 const ISSUE = "https://github.com/superplanehq/superplane/issues/9049";
+const BRANCH = "https://github.com/cherylaurelia/superplane/tree/fix/openai-cached-input-double-count";
+const REPO = "https://github.com/cherylaurelia/superplane-demo";
 
 const before = {
   inputFull: RUN.input,
@@ -175,6 +177,15 @@ export default function Page() {
           <a className="text-foreground underline decoration-line underline-offset-4" href="/PR.md">PR.md</a> ·{" "}
           <a className="text-foreground underline decoration-line underline-offset-4" href="/backfill-dry-run.sql">backfill-dry-run.sql</a>
         </p>
+      </section>
+
+      <section aria-label="Links" className="mt-12 flex flex-wrap items-center justify-center gap-3 font-mono text-xs uppercase tracking-wider">
+        <a href={BRANCH} className="rounded-lg bg-accent px-4 py-3 font-medium text-background hover:opacity-90">
+          View the PR branch
+        </a>
+        <a href={REPO} className="rounded-lg border border-line px-4 py-3 text-foreground hover:bg-panel">
+          View the repo
+        </a>
       </section>
 
       <footer className="mt-20 border-t border-line pt-6 text-center font-mono text-[11px] uppercase tracking-wider text-muted">
